@@ -1,7 +1,9 @@
 
-import java.sql.Statement
+
 import java.sql.Connection
 import java.sql.PreparedStatement
+import java.sql.ResultSet
+import java.sql.Statement
 
 object SqliteStatements {
   
@@ -82,5 +84,31 @@ object SqliteStatements {
     val prepStmt = doPrepare(buildInsertStatement(), fieldValues)
     prepStmt.executeUpdate()
   }  
+  
+  def select(connection: Connection, tableName: String, fields: Array[String]) : ResultSet = {
     
+    def buildSelectStatement(): String = {    
+      
+      def buildFieldList(fields: Array[String]) : String = {
+        
+        @annotation.tailrec
+        def buildFieldListIter(fieldList: String, fields: Array[String]) : String = {
+          if (fields.length == 0) fieldList
+          else {
+            val comma = if (fieldList == "") "" else ", "
+            buildFieldListIter("%s%s%s".format(fieldList, comma, fields.head), fields.tail)
+          } 
+        }
+        
+        buildFieldListIter("", fields)
+      }
+    
+      "SELECT %s FROM %s".format(buildFieldList(fields), tableName)
+    }
+    
+    val stmt = buildSelectStatement()
+    val s = connection.createStatement()
+    s.executeQuery(stmt)
+  }
+  
 }

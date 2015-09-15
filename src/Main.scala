@@ -9,12 +9,12 @@ object Main extends App {
   val fields = Array(("id", "INTEGER"), ("field1", "INTEGER"), ("field2", "INTEGER"))
   SqliteStatements.createTable(conn, "test", fields)  
  
-  val fieldValues = Array[Any](1, 4, 8)
+  val fieldValues = Array[Any](SqliteStatements.getNewId(conn, "test"), 4, 8)
   SqliteStatements.Insert(conn, "test", fieldValues)
   
-  val res = SqliteStatements.select(conn, "test", Array("id as poo", "field2"))
+  val fieldValues2 = Array[Any](SqliteStatements.getNewId(conn, "test"), 49, 8)
+  SqliteStatements.Insert(conn, "test", fieldValues2)
   
-  while (res.next()) {
-    println(res.getString("poo"))
-  }
-}
+  //SqliteStatements.deleteById(conn, "test", SqliteStatements.getMaxId(conn, "test"))
+  
+}  

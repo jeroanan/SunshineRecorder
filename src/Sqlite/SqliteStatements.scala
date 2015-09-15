@@ -1,9 +1,9 @@
-
-
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Statement
+
+import Sqlite.SelectStatement
 
 object SqliteStatements {
   
@@ -85,30 +85,29 @@ object SqliteStatements {
     prepStmt.executeUpdate()
   }  
   
-  def select(connection: Connection, tableName: String, fields: Array[String]) : ResultSet = {
+  def select(connection: Connection, 
+      tableName: String, 
+      fields: Array[String], 
+      whereClauses: Array[(String, String)] = Array()) : ResultSet = {
     
-    def buildSelectStatement(): String = {    
-      
-      def buildFieldList(fields: Array[String]) : String = {
-        
-        @annotation.tailrec
-        def buildFieldListIter(fieldList: String, fields: Array[String]) : String = {
-          if (fields.length == 0) fieldList
-          else {
-            val comma = if (fieldList == "") "" else ", "
-            buildFieldListIter("%s%s%s".format(fieldList, comma, fields.head), fields.tail)
-          } 
-        }
-        
-        buildFieldListIter("", fields)
-      }
-    
-      "SELECT %s FROM %s".format(buildFieldList(fields), tableName)
-    }
-    
-    val stmt = buildSelectStatement()
-    val s = connection.createStatement()
-    s.executeQuery(stmt)
+    SelectStatement.select(connection, tableName, fields, whereClauses)
   }
   
+  def getMaxId(connection: Connection, tableName: String) : Integer = {
+    
+    val resultSet = select(connection, tableName, Array[String]("MAX(id) as id"))    
+    resultSet.getInt("id")    
+  }
+  
+  def getNewId(connection: Connection, tableName: String) = getMaxId(connection, tableName) + 1
+  
+  def tableExists(connection: Connection, tableName: String) : Boolean = {
+    true
+  }
+  
+  def deleteById(connection: Connection, tableName: String, id: Integer) = {
+    val statement = "DELETE FROM %s WHERE id=%d" format(tableName, id)
+    val s = connection.createStatement()
+    s.executeUpdate(statement)
+  }
 }

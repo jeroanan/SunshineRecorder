@@ -55,18 +55,18 @@ object SelectStatement {
       buildWhereClauseIter("", whereClauses)
     }
   
-    def doPrepare(connection: Connection, statement: String, whereClauses: Array[(String, String)]) : PreparedStatement = {
-      
-      def doPrepareIter(counter: Int, statement: PreparedStatement, whereClauses: Array[(String, String)]) : PreparedStatement = {
-        if (whereClauses.length == 0) statement
-        else {
-          statement.setString(counter, whereClauses.head._2)
-          doPrepareIter(counter +1, statement, whereClauses.tail)
-        }
-        statement
+  def doPrepare(connection: Connection, statement: String, whereClauses: Array[(String, String)]) : PreparedStatement = {
+    
+    def doPrepareIter(counter: Int, statement: PreparedStatement, whereClauses: Array[(String, String)]) : PreparedStatement = {
+      if (whereClauses.length == 0) statement
+      else {
+        statement.setString(counter, whereClauses.head._2)
+        doPrepareIter(counter +1, statement, whereClauses.tail)
       }
-      
-      val prepStmt = connection.prepareStatement(statement)
-      doPrepareIter(1, prepStmt, whereClauses)
+      statement
     }
+    
+    val prepStmt = connection.prepareStatement(statement)
+    doPrepareIter(1, prepStmt, whereClauses)
+  }    
 }

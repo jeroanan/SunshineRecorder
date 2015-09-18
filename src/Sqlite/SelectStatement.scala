@@ -6,20 +6,28 @@ import java.sql.ResultSet
 
 object SelectStatement {
   
-  def select(connection: Connection, 
-      tableName: String, 
-      fields: Array[String], 
-      whereClauses: Array[(String, String)] = Array()) : ResultSet = {
+  def getSelectStatement(getConnection: () => Connection,
+      toArray: (ResultSet, Array[String]) => Array[Array[String]]) = {
+  
+    def select(tableName: String, 
+        fields: Array[String], 
+        whereClauses: Array[(String, String)] = Array()) : Array[Array[String]] = {
+      
+      val connection = getConnection()
+      val whereFields = buildWhereClause(whereClauses)
+      val whereClause = if (whereFields == "") "" else " WHERE %s" format whereFields
+      val stmt = ("%s%s" format(buildSelectStatement(tableName, fields), whereClause))
+      val prepStmt = doPrepare(connection, stmt, whereClauses)
+      
+      val res = toArray(prepStmt.executeQuery(), fields)
+      connection.close()
+      res
+    }
     
-    val whereFields = buildWhereClause(whereClauses)
-    val whereClause = if (whereFields == "") "" else " WHERE %s" format whereFields
-    val stmt = ("%s%s" format(buildSelectStatement(tableName, fields), whereClause))
-    val prepStmt = doPrepare(connection, stmt, whereClauses)
-    
-    prepStmt.executeQuery()
+    select _
   }
   
-  def buildSelectStatement(tableName: String, fields: Array[String]): String = {    
+  private def buildSelectStatement(tableName: String, fields: Array[String]): String = {    
       
       def buildFieldList(fields: Array[String]) : String = {
         
@@ -38,7 +46,7 @@ object SelectStatement {
       "SELECT %s FROM %s".format(buildFieldList(fields), tableName)
   }
   
-  def buildWhereClause(whereClauses: Array[(String, String)]) : String = {
+  private def buildWhereClause(whereClauses: Array[(String, String)]) : String = {
       
       @annotation.tailrec
       def buildWhereClauseIter(whereSoFar: String, whereClauses: Array[(String, String)]) : String = {
@@ -55,7 +63,7 @@ object SelectStatement {
       buildWhereClauseIter("", whereClauses)
     }
   
-  def doPrepare(connection: Connection, statement: String, whereClauses: Array[(String, String)]) : PreparedStatement = {
+  private def doPrepare(connection: Connection, statement: String, whereClauses: Array[(String, String)]) : PreparedStatement = {
     
     def doPrepareIter(counter: Int, statement: PreparedStatement, whereClauses: Array[(String, String)]) : PreparedStatement = {
       if (whereClauses.length == 0) statement

@@ -2,41 +2,43 @@ import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import java.sql.Statement
+import java.util.UUID
 
 import Sqlite.SelectStatement
 
 object SqliteStatements {  
+
+  def getConnection() = SqliteConnection.getConnection("test")
   
   /**
    * Execute a SQL statement
    *  
-   * @param connection The connection to the SQL database
    * @param sqlString The statement to be executed
    */
-  def exec(connection: Connection, sqlString: String) = {
-      val stmt = connection.createStatement()    
+  def exec(sqlString: String) = {
+      val connection = getConnection()
+      val stmt = connection.createStatement()
       stmt.executeUpdate(sqlString)
+      connection.close()
   }
    
   /**
    * Drop a table from the database if it exists
    *   
-   * @param connection The connection to the SQL database
    * @param tableName The database to be dropped
    */
-  def dropTableIfExists(connection: Connection, tableName: String) = {
-      exec(connection, "DROP TABLE IF EXISTS %s".format(tableName))
+  def dropTableIfExists(tableName: String) = {
+      exec("DROP TABLE IF EXISTS %s".format(tableName))
   }  
   
   /**
    * Create a new table in the database
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The name of the table to create
    * @param fields The fields to include in the table. A list of tuples. 
    *        Each tuple contains the name of a field and its data type.
    */
-  def createTable(connection: Connection, tableName: String, fields: Array[(String, String)]) = {
+  def createTable(tableName: String, fields: Array[(String, String)]) = {
     
     def buildCreateTableStatement(fields: Array[(String, String)]) : String = {
       
@@ -60,7 +62,7 @@ object SqliteStatements {
         "CREATE TABLE %s (%s)".format(tableName, makeFieldListString(fields))
     }
     
-    exec(connection, buildCreateTableStatement(fields))
+    exec(buildCreateTableStatement(fields))
   }     
     
   /**
@@ -76,15 +78,16 @@ object SqliteStatements {
    * 
    * Prepared statements are used to help mitigate the risk of SQL injection.
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The table to insert the row into
    * @param fieldValues A list of values to be inserted into the new row.
    */
-  def Insert(connection: Connection, tableName: String, fieldValues: Array[Any]) = {
+  def Insert(tableName: String, fieldValues: Array[String]) = {
   
+    val connection = getConnection()
+    
     def buildInsertStatement() : String = {
     
-      def buildParamPlaceholders(fieldValues: Array[Any]) : String = {
+      def buildParamPlaceholders(fieldValues: Array[String]) : String = {
         val paramPlaceholders = "?, " * fieldValues.length
         "(%s)".format(paramPlaceholders.stripSuffix(", "))
       }
@@ -92,19 +95,14 @@ object SqliteStatements {
       "INSERT INTO %s values %s".format(tableName, buildParamPlaceholders(fieldValues))        
     }
     
-    def doPrepare(statement: String, fieldValues: Array[Any]) : PreparedStatement = {
+    def doPrepare(statement: String, fieldValues: Array[String]) : PreparedStatement = {
       
       @annotation.tailrec
-      def doPrepareIter(counter: Int, statement: PreparedStatement, fieldValues: Array[Any]) : PreparedStatement = {
+      def doPrepareIter(counter: Int, statement: PreparedStatement, fieldValues: Array[String]) : PreparedStatement = {
         if (fieldValues.length == 0) statement
         else {
-          val value = fieldValues.head
-          
-          value match {
-            case _: Int => statement.setInt(counter, value.toString.toInt)
-            case _ => statement.setString(counter, value.toString)
-          }
-          
+          val value = fieldValues.head          
+          statement.setString(counter, value.toString)
           doPrepareIter(counter + 1, statement, fieldValues.tail)
         }
       }
@@ -115,6 +113,8 @@ object SqliteStatements {
     
     val prepStmt = doPrepare(buildInsertStatement(), fieldValues)
     prepStmt.executeUpdate()
+    
+    connection.close()
   }  
     
   /**
@@ -122,76 +122,73 @@ object SqliteStatements {
    * 
    * For more information see SelectStatement.scala
    * 
-   * @param connection
    * @param tableName
    * @param fields
    * @param whereClauses
    * @return
    */
-  def select(connection: Connection, 
-      tableName: String, 
+  def select(tableName: String, 
       fields: Array[String], 
-      whereClauses: Array[(String, String)] = Array()) : ResultSet = 
-        
-    SelectStatement.select(connection, tableName, fields, whereClauses)
+      whereClauses: Array[(String, String)] = Array()) : Array[Array[String]] = {
+       
+    val selectStmt = SelectStatement.getSelectStatement(getConnection, resultSetToArray)
+    selectStmt(tableName, fields, whereClauses)
+  }
   
   /**
    * Get the highest value of the id field for a table
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The table to get the highest id for
    * @return The highest value of the id field. If there are no rows then 0 is returned. 
    */
-  def getMaxId(connection: Connection, tableName: String) : Integer = {
+  def getMaxId(tableName: String) : Integer = {
     
-    val resultSet = select(connection, tableName, Array[String]("MAX(id) as id"))    
-    resultSet.getInt("id")    
+    val result = select(tableName, Array[String]("MAX(id) as id"))
+    result.head(0).toInt
   }
   
-  def getNewId(connection: Connection, tableName: String) = getMaxId(connection, tableName) + 1
+  def getNewId(tableName: String) = getMaxId(tableName) + 1
     
   /**
    * Find whether the given table exists in the database
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The table to check for existence
    * @return True if the table exists; false otherwise
    */
-  def tableExists(connection: Connection, tableName: String) : Boolean = {
+  def tableExists(tableName: String) : Boolean = {
     val masterTable = "sqlite_master"
     val whereClause = Array[(String, String)](("name",tableName), ("type", "table"))
     val selectFields = Array[String]("COUNT(*)")
-    val resultSet = select(connection, masterTable, selectFields, whereClause)
-    val count = resultSet.getInt(1)
-        
+    val resultSet = select(masterTable, selectFields, whereClause)
+    val count = resultSet.head(0).toInt
     count > 0
   }
     
   /**
    * Delete a row from a database table based on its id field
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The name of the table to delete the row from
    * @param id The id of the row to be deleted
    */
-  def deleteById(connection: Connection, tableName: String, id: Integer) = {
+  def deleteById(tableName: String, id: Integer) = {
     val statement = "DELETE FROM %s WHERE id=%d" format(tableName, id)
-    val s = connection.createStatement()
+    val conn = getConnection()
+    val s = conn.createStatement()
     s.executeUpdate(statement)
+    conn.close()
   }
   
   /**
    * Create a database table if it does not already exist
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The name of the table to create
    * @param fields The fields to be added included in the table. An array of tuples. 
    *               Each tuple contains the name and data type of a field.
    * @return True if the table was created, false otherwise 
    */
-  def createTableIfDoesNotExist(connection: Connection, tableName: String, fields: Array[(String, String)]) = {    
-    if (!tableExists(connection, tableName)) {
-      createTable(connection, tableName, fields)
+  def createTableIfDoesNotExist(tableName: String, fields: Array[(String, String)]) = {    
+    if (!tableExists(tableName)) {
+      createTable(tableName, fields)
       true
     } else {
       false
@@ -201,15 +198,14 @@ object SqliteStatements {
   /**
    * Does the given column exist in the given table?
    * 
-   * @param connection The connection to the SQL database
    * @param tableName The name of the table to check
    * @param columnName The name of the column to check
    * @return true if a column with this name exists in the table; false otherwise
    */
-  def columExists(connection: Connection, tableName: String, columnName: String) : Boolean = {
+  def columnExists(tableName: String, columnName: String) : Boolean = {
     
-    val tableInfo = getTableInfo(connection, tableName)
-    val columns = getTableColumnNames(connection, tableInfo)
+    val tableInfo = getTableInfo(tableName)
+    val columns = getTableColumnNames(tableInfo)
     columns.filter(_ == columnName).length > 0
   }  
   
@@ -217,18 +213,22 @@ object SqliteStatements {
    * Get the names of all columns from a table given the result of PRAGMA table_info
    * 
    * @param connection The connection to the SQL database
-   * @param tableInfo The result of a PRAGMA table_info query
-   * @return An array containing the names of 
+   * @param tableInfo A two-dimensional array containing the result of PRAGMA table_info
+   * @return An array containing the names of the column names
    */
-  def getTableColumnNames(connection: Connection, tableInfo: ResultSet) : Array[String] = {
+  def getTableColumnNames(tableInfo: Array[Array[String]]) : Array[String] = {    
+    getTableColumnNamesAndTypes(tableInfo).map(x => x._1)
+  }
+  
+  def getTableColumnNamesAndTypes(tableInfo: Array[Array[String]]): Array[(String, String)] = {
     
     @annotation.tailrec
-    def getTableColumnNamesIter(columns: Array[String], tableInfo: ResultSet) : Array[String] = {
-      if (!tableInfo.next()) columns
-      else getTableColumnNamesIter(columns :+ tableInfo.getString("name"), tableInfo)
+    def nameTypeIter(columns: Array[(String, String)], tableInfo: Array[Array[String]]) : Array[(String, String)] = {
+      
+      if (tableInfo isEmpty) columns
+      else nameTypeIter(columns :+ (tableInfo.head(1), tableInfo.head(2)), tableInfo.tail)
     }
-    
-    getTableColumnNamesIter(Array(), tableInfo)
+    nameTypeIter(Array(), tableInfo)
   }
   
   /**
@@ -236,12 +236,18 @@ object SqliteStatements {
    * 
    * @param connection The connection to the SQL database
    * @param tableName The name of the table to get information about
-   * @return A ResultSet containing the table information
+   * @return A two-dimensional array containing the table records
    */
-  def getTableInfo(connection: Connection, tableName: String) : ResultSet = {
+  def getTableInfo(tableName: String) : Array[Array[String]] = {
     val sql = "PRAGMA table_info(%s)" format(tableName)
+    val connection = getConnection()
     val stmt = connection.createStatement()
-    stmt.executeQuery(sql)    
+    val result = stmt.executeQuery(sql)
+    
+    val fields = Array("cid", "name", "type", "notnull", "dflt_value", "pk")
+    val a = resultSetToArray(result, fields)
+    connection.close()
+    a
   }
   
   /**
@@ -251,9 +257,65 @@ object SqliteStatements {
    * @param tableName The name of the table to add the column to
    * @param columnName The name of the column to be added
    * @param columnType The data type of the column to be added
-  */
-  def addColumn(connection: Connection, tableName: String, columnName: String, columnType: String) = {
+   */
+  def addColumn(tableName: String, columnName: String, columnType: String) = {
     val sql = "ALTER TABLE %s ADD %s %s" format(tableName, columnName, columnType)
-    exec(connection, sql)
+    exec(sql)
   }
+  
+  /**
+   * Add a column to a database column if it doesn't already exist
+   * 
+   * @param connection The connection to the SQL database
+   * @param tableName The name of the table to add the column to
+   * @param columnName The name of the column to be added
+   * @param columnType The data type of the column to be added
+   */
+  def addColumnIfDoesntExist(tableName: String, columnName: String, columnType: String) = {
+    if (!columnExists(tableName, columnName)) addColumn(tableName, columnName, columnType)    
+  }
+  
+  def getExtraColumns(tableName: String, columns: Array[String]) : Array[String] = {
+    val tableColumns = getTableColumnNames(getTableInfo(tableName))    
+    tableColumns.filter(!columns.contains(_))
+  }
+  
+  def resultSetToArray(resultSet: ResultSet, columnNames: Array[String]) : Array[Array[String]] = {
+       
+     @annotation.tailrec
+     def iter(table : Array[Array[String]]) : Array[Array[String]] = {
+       if (!resultSet.next()) table
+       else {
+          val row = columnNames.map(resultSet.getString(_))            
+          iter(table :+ row)
+       }
+     }
+     
+     iter(Array(Array())).filter(_.length > 0)
+   }
+  
+  def dropColumns(tableName: String, columns: Array[String]) = {
+    
+     if (!columns.isEmpty)
+     {
+       val existingColumns = getTableColumnNamesAndTypes(getTableInfo(tableName))
+       val columnsToKeep = existingColumns.filter(x => !columns.contains(x._1))
+       
+       val tmpTableName = "%s%s" format(tableName, UUID.randomUUID().toString().replace("-", ""))
+       createTableIfDoesNotExist(tmpTableName, columnsToKeep)
+       
+       val columnNames = columnsToKeep.map(_._1)
+       
+       val existingData = select(tableName, columnNames)
+       existingData.foreach(Insert(tmpTableName, _))
+               
+       dropTableIfExists(tableName)
+       
+       createTableIfDoesNotExist(tableName, columnsToKeep)
+       existingData.foreach(Insert(tableName, _))
+       
+       dropTableIfExists(tmpTableName)
+     }
+  } 
+  
 }

@@ -31,7 +31,7 @@ object Main extends SimpleSwingApplication {
       contents += new Button {
         text = "Press Me!"
         reactions += {
-          case ButtonClicked(_) => Sunshine.addFolder(UUID.randomUUID().toString())
+          case ButtonClicked(_) => Sunshine.addBookmark("http://www.duckduckgo.com", "Duck Duck Go", 3)
         }
       }
     }

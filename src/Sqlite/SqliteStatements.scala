@@ -25,7 +25,7 @@ object SqliteStatements {
   /**
    * Drop a table from the database if it exists
    *
-   * @param tableName The database to be dropped
+   * @param tableName The table to be dropped
    */
   def dropTableIfExists(tableName: String) = {
       exec("DROP TABLE IF EXISTS %s".format(tableName))
@@ -81,10 +81,11 @@ object SqliteStatements {
    *
    * For more information see SelectStatement.scala
    *
-   * @param tableName
-   * @param fields
-   * @param whereClauses
-   * @return
+   * @param tableName The name of the table to select values from
+   * @param fields A list of the field names to select
+   * @param whereClauses A list of tuples[String, String]. Each tuple contains the name of a field and its value.
+	*                     The list of where clauses that will be applied to the select statement
+   * @return A two-dimensional list of String. Each row contains a row from the result set
    */
   def select(tableName: String,
       fields: List[String],
@@ -102,10 +103,19 @@ object SqliteStatements {
    */
   def getMaxId(tableName: String) : Integer = {
     val result = select(tableName, List[String]("MAX(id)"))
-    result.head.head.toInt
+	 if (result.head.head == null) 0
+    else result.head.head.toInt
   }
 
-  def getNewId(tableName: String) = getMaxId(tableName) + 1
+  /**
+	* Get a new id for the given table
+	*
+	* @param tableName The name of the table to get a new id for
+	* @return The new id. This is the current maximum id plus one
+	*/
+  def getNewId(tableName: String) = {
+	 getMaxId(tableName) + 1
+  }
 
   /**
    * Find whether the given table exists in the database
@@ -117,6 +127,11 @@ object SqliteStatements {
     getAllTableNames contains tableName 
   }
 
+  /*
+	* Get the names of all tables in the database
+	*
+	* @return a list of string. Each element is a table name.
+	*/
   def getAllTableNames() : List[String] = {
 	 val masterTable = "sqlite_master"
     val selectFields = List[String]("name")
@@ -145,9 +160,9 @@ object SqliteStatements {
    * @param tableName The name of the table to create
    * @param fields The fields to be added included in the table. An array of tuples.
    *               Each tuple contains the name and data type of a field.
-   * @return True if the table was created, false otherwise
+   * @return true if the table was created, false otherwise
    */
-  def createTableIfDoesNotExist(tableName: String, fields: List[(String, String)]) = {
+  def createTableIfDoesNotExist(tableName: String, fields: List[(String, String)]) : Boolean = {
     if (!tableExists(tableName)) {
       createTable(tableName, fields)
       true
@@ -157,7 +172,7 @@ object SqliteStatements {
   }
 
   /**
-   * Does the given column exist in the given table?
+   * Check whether the given column exists in the given table
    *
    * @param tableName The name of the table to check
    * @param columnName The name of the column to check
@@ -174,13 +189,19 @@ object SqliteStatements {
    * Get the names of all columns from a table given the result of PRAGMA table_info
    *
    * @param connection The connection to the SQL database
-   * @param tableInfo A two-dimensional array containing the result of PRAGMA table_info
-   * @return An array containing the names of the column names
+   * @param tableInfo A two-dimensional list containing the result of PRAGMA table_info. Each row contains an entry.
+   * @return A list of String containing the column names
    */
   def getTableColumnNames(tableInfo: List[List[String]]) : List[String] = {
     getTableColumnNamesAndTypes(tableInfo).map(x => x._1)
   }
 
+  /**
+	* Get the column names and types from the given table info
+	*
+	* @param tableInfo A result set from getTableInfo
+	* @returns a list of tuple[String, String]. Each entry contains the name and type of a column
+	*/
   def getTableColumnNamesAndTypes(tableInfo: List[List[String]]): List[(String, String)] = {
     tableInfo.map(x => (x(1), x(2)))
   }
@@ -190,7 +211,7 @@ object SqliteStatements {
    *
    * @param connection The connection to the SQL database
    * @param tableName The name of the table to get information about
-   * @return A two-dimensional array containing the table records
+   * @return A two-dimensional list containing the table records. Each row contains a record.
    */
   def getTableInfo(tableName: String) : List[List[String]] = {
     val sql = "PRAGMA table_info(%s)" format(tableName)
@@ -241,6 +262,12 @@ object SqliteStatements {
     tableColumns.filter(!columns.contains(_))
   }
 
+  /**
+	* Get tables that exist in the databse that aren't in the given list of table names
+	*
+	* @param tables A list of table names
+	* @return A list of table names that exist in the database but aren't in tables
+	*/
   def getExtraTables(tables: List[String]) : List[String] = { 
 	 val allTables = getAllTableNames()
 	 allTables.filter(!tables.contains(_))
@@ -251,7 +278,7 @@ object SqliteStatements {
   *
   * @param resultSet The ResultSet to transform
   * @param columnNames The list of column names in the ResultSet
-  * @return A two-dimensional array representing the data.
+  * @return A two-dimensional list representing the data. Each row contains a record
   */
   def resultSetToArray(resultSet: ResultSet, columnNames: List[String]) : List[List[String]] = {
 
@@ -276,7 +303,7 @@ object SqliteStatements {
    * temp table.
    *
    * @param tableName The table name to drop columns from
-   * @param columns the list of column names to drop
+   * @param columns A list of column names to drop. If the list is empty then nothing happens.
    */
   def dropColumns(tableName: String, columns: List[String]) = {
 
@@ -303,12 +330,12 @@ object SqliteStatements {
   }
 
   def updateTable(tableName: String, columns: List[(String, String)], whereClauses: List[(String, String)]) = {
+
 	 def buildWhereClause(whereClauses: List[(String, String)]) = {
 		if (whereClauses.isEmpty) ""
 		else "WHERE %s" format(whereClauses.map(x => "%s=?" format(x._1)).reduce(_ + " AND " + _))
 	 }
 	 val columnsPlaceholders = columns.map(x => "%s=?" format(x._1)).reduce(_ + ", " + _)
-	 
 	 
 	 val stmt = "UPDATE %s SET %s %s" format(tableName, columnsPlaceholders, buildWhereClause(whereClauses))
 
@@ -318,5 +345,9 @@ object SqliteStatements {
     prepStmt.executeUpdate()
 
     connection.close()
+  }
+
+  def countWhere(tableName: String, whereClauses: List[(String, String)]) = {
+	 select(tableName, List("COUNT(*)"), whereClauses).head.head.toInt
   }
 }

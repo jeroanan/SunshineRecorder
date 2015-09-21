@@ -3,3 +3,5 @@ class FolderExistsException extends Exception
 class ValidationException extends Exception
 
 class FolderNotFoundException extends Exception
+
+class BookmarkExistsException extends Exception

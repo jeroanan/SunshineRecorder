@@ -69,7 +69,7 @@ object SqliteStatements {
       "INSERT INTO %s values %s".format(tableName, placeholders)
     }
 
-    val preparer = PrepareStatement.getPrepareStatement(connection) 
+    val preparer = PrepareStatement.getPrepareStatement(connection)
 	 val prepStmt = preparer(buildInsertStatement(), fieldValues)
     prepStmt.executeUpdate()
 
@@ -124,7 +124,7 @@ object SqliteStatements {
    * @return True if the table exists; false otherwise
    */
   def tableExists(tableName: String) : Boolean = {
-    getAllTableNames contains tableName 
+    getAllTableNames contains tableName
   }
 
   /*
@@ -268,7 +268,7 @@ object SqliteStatements {
 	* @param tables A list of table names
 	* @return A list of table names that exist in the database but aren't in tables
 	*/
-  def getExtraTables(tables: List[String]) : List[String] = { 
+  def getExtraTables(tables: List[String]) : List[String] = {
 	 val allTables = getAllTableNames()
 	 allTables.filter(!tables.contains(_))
   }
@@ -329,6 +329,13 @@ object SqliteStatements {
      }
   }
 
+  /**
+   * Update the fields in a table.
+   *
+   * @param tableName The name of the table to update
+   * @param columns A list of tuple of String containing the column names and values to update.
+   * @param whereClauses A list of tuple of String containing the column names and values to use in the where clause
+   */
   def updateTable(tableName: String, columns: List[(String, String)], whereClauses: List[(String, String)]) = {
 
 	 def buildWhereClause(whereClauses: List[(String, String)]) = {
@@ -336,17 +343,24 @@ object SqliteStatements {
 		else "WHERE %s" format(whereClauses.map(x => "%s=?" format(x._1)).reduce(_ + " AND " + _))
 	 }
 	 val columnsPlaceholders = columns.map(x => "%s=?" format(x._1)).reduce(_ + ", " + _)
-	 
+
 	 val stmt = "UPDATE %s SET %s %s" format(tableName, columnsPlaceholders, buildWhereClause(whereClauses))
 
 	 val connection = getConnection()
-	 val preparer = PrepareStatement.getPrepareStatement(connection) 
+	 val preparer = PrepareStatement.getPrepareStatement(connection)
 	 val prepStmt = preparer(stmt, columns.map(x => x._2) ++ whereClauses.map(x => x._2))
-    prepStmt.executeUpdate()
+   prepStmt.executeUpdate()
 
-    connection.close()
+   connection.close()
   }
 
+  /**
+   * Count the number of occurrences in a table where a where clause applies
+   *
+   * @param tableName The name of the table to count from
+   * @param whereClauses A list of tuple of String containing the column names and values to use in the where clause
+   * @return The number of rows from the count   
+   */
   def countWhere(tableName: String, whereClauses: List[(String, String)]) = {
 	 select(tableName, List("COUNT(*)"), whereClauses).head.head.toInt
   }

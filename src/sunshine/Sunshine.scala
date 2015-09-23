@@ -7,7 +7,7 @@ object Sunshine {
 	* Initialise the application
 	*/
   def init() = {
-	 Database.initDatabase() 
+	 Database.initDatabase()
   }
 
   /**
@@ -25,7 +25,7 @@ object Sunshine {
   }
 
   /**
-	* Delete a folder
+	* Delete a folder. Delete all bookmarks in the folder.
 	*
 	* @param folderName the name of the folder to be deleted
 	* @throws ValidationException if folderName is empty or whitespace
@@ -37,6 +37,11 @@ object Sunshine {
 	 validate(validations)
 
 	 val id = getAllFolders.filter(_(1) == folderName).head.head.toInt
+
+   val bookmarks = getAllBookmarks.filter(_(3) == id.toString).map(_(1))
+
+   bookmarks.foreach(deleteBookmark(_))
+
 	 SqliteStatements.deleteById("folder", id)
   }
 
@@ -87,7 +92,7 @@ object Sunshine {
 	* @return A two-dimensional list. Each row is a tuple of String containing the id and name of the folder
 	*/
   def getAllFolders() : List[List[String]] = {
-	 SqliteStatements.select("folder", List("id", "name")) 
+	 SqliteStatements.select("folder", List("id", "name"))
   }
 
   /**
@@ -110,12 +115,110 @@ object Sunshine {
 	 SqliteStatements.Insert("bookmark", List(SqliteStatements.getNewId("bookmark").toString,
 															url,
 															description,
-															folderId.toString))															
+															folderId.toString))
   }
-  
+
+  /**
+   * Delete a bookmark
+   *
+   * @param url The url of the bookmark to be deleted
+   * @throws ValidationException if url is empty or whitespace
+   * @throws BookmarkNotFoundException if no bookmark with the given url exists
+   */
+  def deleteBookmark(url: String) = {
+    val validations = List((url.trim.isEmpty, new ValidationException),
+                      (!bookmarkExists(url), new BookmarkNotFoundException))
+    validate(validations)
+
+    val id = getBookmarkId(url)
+
+    SqliteStatements.deleteById("bookmark", id)
+  }
+
+  /**
+   * Update a bookmark
+   *
+   * @param oldUrl The current url of the bookmark
+   * @param newUrl The new url of the bookmark
+   * @param newDescription The new description of the bookmark
+   * @throws ValidationException if oldUrl or newUrl are empty or whitespace
+   * @throws BookmarkNotFoundException if no bookmark exists with url of oldUrl
+   * @throws BookmarkExistsException if oldUrl does not equal newUrl and a bookmark already exists with url of newUrl
+   */
+  def updateBookmark(oldUrl: String, newUrl: String, newDescription: String) = {
+
+    def updatingUrl() : Boolean = {
+      oldUrl != newUrl
+    }
+
+    val validations = List( (!List(oldUrl, newUrl).filter(_.trim.isEmpty).isEmpty, new ValidationException),
+                      (!bookmarkExists(oldUrl), new BookmarkNotFoundException),
+                      (updatingUrl && bookmarkExists(newUrl), new BookmarkExistsException))
+
+    validate(validations)
+
+    val id = getBookmarkId(oldUrl)
+
+    val updateColumns = List(("url", newUrl),
+                             ("description", newDescription))
+
+    val whereClause = List(("id", id.toString))
+
+    SqliteStatements.updateTable("bookmark", updateColumns, whereClause)
+  }
+
+  /**
+   * Move a bookmark to a different folder
+   *
+   * @param url The url of the bookmark to move
+   * @param newFolder The name of the folder to move to
+   * @throws ValidationException if url or newFolder are empty or whitespace
+   * @throws BookmarkNotFoundException if no bookmark exists with the given url
+   * @throws FolderNotFoundException if no folder exists with a name of newFolder
+   */
+  def moveBookmark(url: String, newFolder: String) = {
+    val validations = List( (!List(url, newFolder).filter(_.trim.isEmpty).isEmpty, new ValidationException),
+                      (!bookmarkExists(url), new BookmarkNotFoundException),
+                      (!folderExists(newFolder), new FolderNotFoundException))
+    validate(validations)
+
+    val folderId = getAllFolders().filter(_(1) == newFolder).head.head
+
+    val updateColumns = List(("folder", folderId))
+    val whereClause = List(("url", url))
+
+    SqliteStatements.updateTable("bookmark", updateColumns, whereClause)
+  }
+
+  /**
+   * Get a bookmark's id
+   *
+   * @param url The id of the bookmark
+   * @returns The id of the bookmark
+   * @throws ValidationException if the url is empty or whitespace
+   * @throws BookmarkNotFoundException if no bookmark exists with the given url
+   */
+  private def getBookmarkId(url: String) : Integer = {
+    val validations = List((url.trim.isEmpty, new ValidationException),
+                      (!bookmarkExists(url), new BookmarkNotFoundException))
+    validate(validations)
+    getAllBookmarks.filter(x => x(1) == url).head.head.toInt
+  }
+
+
+  /**
+	* Check if a bookmark with the given url exists
+	*
+	* @param url The url to check
+	* @return true if the bookmark exists, otherwise false
+	*/
+  private def bookmarkExists(url: String) : Boolean = {
+	 SqliteStatements.countWhere("bookmark", List(("url", url))) > 0
+  }
+
   /**
 	* Throw an exception if a predicate is true
-	* 
+	*
 	* @param validations A list containing a tuple of Boolean and an object deriving from Exception.
 	*                    If any of the Boolean values are true then the Exception of the first such
 	*                    entry in this list is thrown
@@ -124,16 +227,6 @@ object Sunshine {
   private def validate(validations: List[(Boolean, Exception)]) = {
 		val exceptions = validations.filter(x => x._1)
 		if (!exceptions.isEmpty) throw exceptions.head._2
-  }
-
-  /**
-	* Check if a bookmark with the given url exists
-	*
-	* @param url The url to check
-	* @return true if the bookmark exists, otherwise false
-	*/
-  def bookmarkExists(url: String) : Boolean = {
-	 SqliteStatements.countWhere("bookmark", List(("url", url))) > 0
   }
 
   /**
